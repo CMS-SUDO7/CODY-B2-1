@@ -5,20 +5,14 @@
 ## 요구 환경과 실행
 
 - Python 3.10 이상
-- 외부 패키지 없음
+- 표준 라이브러리만 사용
+- 별도 `pip install`이 필요한 외부 패키지 없음
 
 프로젝트 폴더에서 바로 실행합니다.
 
 ```bash
 python -m budget_app --help
 python -m budget_app <command> --help
-```
-
-원하면 설치 후 `budget-app` 명령도 사용할 수 있습니다.
-
-```bash
-python -m pip install -e .
-budget-app --help
 ```
 
 기본 저장 폴더는 현재 위치의 `./data`입니다. 다른 위치는 **명령어 앞에** 전역 옵션으로 지정합니다.
@@ -69,7 +63,7 @@ python -m budget_app export --out ./july.csv --month 2026-07
 python -m budget_app export --out ./period.csv --from 2026-07-01 --to 2026-07-15
 ```
 
-모든 하위 명령은 `--help`를 제공합니다. 정상 종료 코드는 `0`, 입력·도메인 오류는 `2`, 파일 오류는 `3`입니다. 예상 가능한 오류에는 스택트레이스 대신 원인과 해결 힌트를 출력합니다.
+모든 하위 명령은 `--help`를 제공합니다. 정상 종료 코드는 `0`, 입력·도메인 오류는 `2`, 파일 오류는 `3`, 사용자 중단(`Ctrl+C`)은 `130`입니다. 오류에는 스택트레이스 대신 원인과 해결 힌트를 출력합니다.
 
 ## 저장 위치와 형식
 

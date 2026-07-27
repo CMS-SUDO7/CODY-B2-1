@@ -37,6 +37,10 @@ def friendly_errors(func: Callable[P, int]) -> Callable[P, int]:
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> int:
         try:
             return func(*args, **kwargs)
+        except KeyboardInterrupt:
+            print("\n중단: 사용자가 프로그램을 종료했습니다.", file=sys.stderr)
+            print("해결: 필요한 경우 명령을 다시 실행하세요.", file=sys.stderr)
+            return 130
         except BudgetAppError as exc:
             print(f"오류: {exc.message}", file=sys.stderr)
             if exc.hint:
