@@ -1,122 +1,200 @@
-# Budget Console
+# 콘솔 가계부 (`budget_app`)
 
-파일 손상과 메모리 사용을 고려해 설계한 Python 콘솔 가계부입니다. 거래 추가·목록·검색·월별 요약·예산·카테고리·수정·삭제·CSV 가져오기/내보내기를 지원합니다.
+Python 표준 라이브러리만 사용하는 JSONL 기반 콘솔 가계부입니다. Python 3.10 이상에서 동작하며 거래·카테고리·예산을 서로 다른 파일에 영구 저장합니다.
 
-## 요구 환경과 실행
+## 1. 실행 방법
 
-- Python 3.10 이상
-- 표준 라이브러리만 사용
-- 별도 `pip install`이 필요한 외부 패키지 없음
-
-프로젝트 폴더에서 바로 실행합니다.
+프로젝트 루트(`README.md`와 `budget_app` 폴더가 있는 위치)에서 실행합니다.
 
 ```bash
 python -m budget_app --help
 python -m budget_app <command> --help
 ```
 
-기본 저장 폴더는 현재 위치의 `./data`입니다. 다른 위치는 **명령어 앞에** 전역 옵션으로 지정합니다.
+저장 폴더의 기본값은 `./data`입니다. 다른 폴더를 사용하려면 **명령어 앞에** 전역 옵션을 둡니다.
 
 ```bash
-python -m budget_app --data-dir ./my-data list --limit 10
+python -m budget_app --data-dir ./my_data list --limit 10
 ```
 
-첫 실행 때 폴더와 세 파일이 자동 생성되며, 카테고리가 비어 있으면 `food`, `transport`, `rent`, `salary`, `health`, `leisure`, `other`가 자동 등록됩니다.
+최초 실행 시 저장 폴더와 JSONL 파일 3개가 자동 생성됩니다. `categories.jsonl`이 비어 있으면 `food`, `transport`, `housing`, `health`, `salary`, `etc` 기본 카테고리를 자동 생성합니다.
 
-## 주요 명령
+## 2. 주요 명령
+
+### 거래 추가: 대화형 방식
 
 ```bash
-# 대화형 거래 추가
 python -m budget_app add
+```
 
-# 최신 20건 / 최신 5건
+날짜, 타입, 카테고리, 금액, 메모, 태그를 순서대로 입력합니다. 날짜에서 Enter를 누르면 오늘 날짜가 적용됩니다. 저장되면 생성된 UUID 기반 `id`를 출력합니다.
+
+### 최근 거래 목록
+
+```bash
 python -m budget_app list
 python -m budget_app list --limit 5
-
-# 복합 검색(지정한 조건은 AND로 결합)
-python -m budget_app search --from 2026-07-01 --to 2026-07-31
-python -m budget_app search --category food --type expense --q 점심 --tag 회사
-
-# 월 요약과 지출 카테고리 TOP 3
-python -m budget_app summary --month 2026-07 --top 3
-
-# 예산 설정/조회
-python -m budget_app budget set --month 2026-07 --amount 1000000
-python -m budget_app budget get --month 2026-07
-python -m budget_app budget list
-
-# 카테고리 관리
-python -m budget_app category add education
-python -m budget_app category list
-python -m budget_app category remove education
-
-# 옵션 기반 수정(지정한 필드만 변경)
-python -m budget_app update --id <id> --amount 15000 --memo "팀 점심"
-python -m budget_app update --id <id> --tags "회사,식사"
-
-# 삭제
-python -m budget_app delete --id <id>
-
-# CSV 가져오기/내보내기
-python -m budget_app import --from ./input.csv
-python -m budget_app export --out ./july.csv --month 2026-07
-python -m budget_app export --out ./period.csv --from 2026-07-01 --to 2026-07-15
 ```
 
-모든 하위 명령은 `--help`를 제공합니다. 정상 종료 코드는 `0`, 입력·도메인 오류는 `2`, 파일 오류는 `3`, 사용자 중단(`Ctrl+C`)은 `130`입니다. 오류에는 스택트레이스 대신 원인과 해결 힌트를 출력합니다.
+“최신순”은 최근 등록 순서를 의미합니다. `transactions.jsonl`을 파일 뒤에서부터 읽는 제너레이터를 사용하므로 목록 조회를 위해 파일 전체를 메모리에 올리지 않습니다.
 
-## 저장 위치와 형식
+### 거래 검색
 
-`--data-dir` 아래에 최소 세 파일을 분리해 영구 저장합니다.
+```bash
+python -m budget_app search --from 2026-08-01 --to 2026-08-31
+python -m budget_app search --category food --type expense
+python -m budget_app search --q 점심 --tag 회사
+```
 
-| 파일 | 형식 | 역할 |
-| --- | --- | --- |
-| `transactions.jsonl` | UTF-8 JSONL | 거래(한 줄에 JSON 객체 하나) |
-| `categories.jsonl` | UTF-8 JSONL | 카테고리 |
-| `budgets.jsonl` | UTF-8 JSONL | 월별 예산 |
+검색 조건은 함께 사용할 수 있고 결과는 최근 등록 순서로 표시됩니다. 검색도 역순 제너레이터를 사용합니다.
 
-거래 예시:
+### 월별 요약
+
+```bash
+python -m budget_app summary --month 2026-08
+python -m budget_app summary --month 2026-08 --top 5
+```
+
+총수입, 총지출, 잔액, 지출 카테고리 TOP N을 출력합니다. 설정된 월 예산이 있으면 사용률과 초과 경고도 표시합니다. 거래가 없는 달에는 `데이터 없음`을 출력합니다.
+
+### 예산 설정/조회
+
+```bash
+python -m budget_app budget set --month 2026-08 --amount 1000000
+python -m budget_app budget get --month 2026-08
+```
+
+### 카테고리 관리
+
+```bash
+python -m budget_app category list
+python -m budget_app category add --name education
+python -m budget_app category remove --name education
+```
+
+`--name`을 생략하면 대화형으로 이름을 입력합니다. 거래에서 사용 중인 카테고리는 삭제할 수 없습니다. 먼저 해당 거래를 `update`로 다른 카테고리로 바꿔야 합니다.
+
+### 거래 수정: 옵션 방식으로 고정
+
+```bash
+python -m budget_app update --id <거래-id> --amount 15000
+python -m budget_app update --id <거래-id> --category food --memo "팀 점심" --tags "회사,식사"
+python -m budget_app update --id <거래-id> --memo "" --tags ""
+```
+
+`update`는 대화형이 아닌 옵션 방식입니다. 지정한 필드만 변경합니다. 빈 `--memo`와 빈 `--tags`는 기존 값을 지웁니다. 수정할 옵션이 하나도 없거나 id가 없으면 오류 종료합니다.
+
+### 거래 삭제
+
+```bash
+python -m budget_app delete --id <거래-id>
+```
+
+존재하지 않는 id는 원인과 해결 힌트를 출력하고 종료 코드 1로 끝납니다.
+
+### CSV 가져오기
+
+```bash
+python -m budget_app import --from ./sample.csv
+```
+
+CSV 전체 행을 먼저 검증합니다. 한 행이라도 잘못되면 어느 거래도 반영하지 않습니다. 모든 행이 유효할 때만 기존 거래와 합쳐 원자적으로 저장합니다. CSV 카테고리는 먼저 등록되어 있어야 합니다.
+
+### CSV 내보내기
+
+```bash
+python -m budget_app export --out ./august.csv --month 2026-08
+python -m budget_app export --out ./range.csv --from 2026-08-01 --to 2026-08-15
+```
+
+`--month` 또는 `--from`/`--to` 날짜 조건이 반드시 필요합니다. 월 조건과 날짜 범위 조건은 함께 사용할 수 없습니다. 출력 CSV도 임시 파일을 완성한 뒤 원자적으로 교체합니다.
+
+## 3. 저장 파일 위치와 형식
+
+기본 저장 구조:
+
+```text
+./data/
+├── transactions.jsonl
+├── categories.jsonl
+└── budgets.jsonl
+```
+
+JSONL은 한 줄에 JSON 객체 하나를 기록합니다. 모두 UTF-8입니다.
+
+`transactions.jsonl` 예시:
 
 ```json
-{"id":"8c...","type":"expense","date":"2026-07-10","amount":12000,"category":"food","memo":"점심","tags":["회사"]}
+{"id":"3c17...","type":"expense","date":"2026-08-10","amount":12000,"category":"food","memo":"점심","tags":["회사","식사"]}
 ```
 
-`list`와 `search`는 제너레이터로 거래를 한 건씩 내보냅니다. 최신순 조회는 파일 끝에서부터 블록 단위로 읽으므로 전체 파일을 리스트로 만들지 않습니다. `summary`도 순방향 스트리밍 집계를 사용합니다. 수정·삭제는 같은 폴더의 임시 파일에 완전한 결과를 기록하고 `fsync`한 뒤 원본과 원자적으로 교체합니다.
+`categories.jsonl` 예시:
 
-## 입력 규칙
+```json
+{"name":"food"}
+```
 
-- 날짜: 실제 존재하는 날짜의 `YYYY-MM-DD`
-- 월: `YYYY-MM`
-- 타입: `income` 또는 `expense`
-- 금액: 0보다 큰 정수
-- 카테고리: 사전에 등록된 값
-- 태그: 대화형/수정/CSV에서 쉼표로 구분
+`budgets.jsonl` 예시:
 
-`add`는 잘못된 날짜·타입·금액·카테고리를 다시 입력받습니다. `update`는 **옵션 방식으로 고정**되어 있으며 없는 id는 오류로 처리합니다. 사용 중인 카테고리는 삭제할 수 없고, 해당 거래를 먼저 다른 카테고리로 수정해야 합니다.
+```json
+{"month":"2026-08","amount":1000000}
+```
 
-## import/export CSV 스키마
+거래 수정·삭제, 예산 갱신, 카테고리 삭제는 같은 폴더의 임시 파일에 먼저 기록하고 `os.replace()`로 원자적으로 교체합니다. 쓰기 직전에 `flush()`와 `fsync()`도 실행합니다.
 
-UTF-8, 헤더 포함 CSV입니다. Excel 호환성을 위해 내보내기는 UTF-8 BOM을 포함하며 가져오기는 BOM 유무를 모두 처리합니다.
+## 4. import/export CSV 스키마
+
+공통 규칙: UTF-8, 첫 줄 헤더 포함. Excel이 만든 UTF-8 BOM 파일도 import할 수 있습니다.
 
 | column | required | 설명 |
 | --- | --- | --- |
 | `date` | Y | `YYYY-MM-DD` |
-| `type` | Y | `income` / `expense` |
-| `category` | Y | 등록된 카테고리 |
-| `amount` | Y | 양수 정수 |
+| `type` | Y | `income` 또는 `expense` |
+| `category` | Y | 이미 등록된 카테고리 |
+| `amount` | Y | 0보다 큰 정수 |
 | `memo` | N | 문자열 |
-| `tags` | N | 쉼표 구분 문자열(CSV 규칙에 따라 필드 인용) |
+| `tags` | N | 쉼표(`,`) 구분 문자열 |
 
-가져오기에서 유효한 행은 즉시 영구 저장되며, 잘못된 행은 건너뛰고 성공/건너뜀 건수를 출력합니다. 새 거래 id는 가져올 때 생성됩니다. 내보내기는 `--month` 또는 `--from`/`--to` 조건이 반드시 필요하며 `--month`와 기간 조건은 함께 쓸 수 없습니다.
+예시:
 
-## 구조
-
-```text
-budget_app/
-├── cli.py           # argparse, 대화형 입력, 출력, 데코레이터
-├── models.py        # 데이터 모델, 검증, 도메인 오류
-├── repositories.py  # JSONL 스트리밍, 원자적 저장
-└── services.py      # 검색, 요약, 예산, CSV 업무 규칙
+```csv
+date,type,category,amount,memo,tags
+2026-08-01,income,salary,3000000,월급,"급여,정기"
+2026-08-02,expense,food,12000,점심,"회사,식사"
 ```
 
-`cli.py`의 `friendly_errors`, `measure_time` 데코레이터가 공통 예외 처리와 실행 시간 측정을 분리합니다. 공개 함수와 주요 데이터 구조에는 타입 힌트를 적용했습니다.
+## 5. 모듈 구조
+
+| 파일 | 책임 |
+| --- | --- |
+| `cli.py` | 명령 파싱, 대화형 입력, 화면 출력 |
+| `models.py` | `Transaction`, `Budget` dataclass와 기본 검증 |
+| `services.py` | 검색, 요약, 예산 계산, 카테고리 규칙, CSV 처리 |
+| `repositories.py` | JSONL 제너레이터, 영구 저장, 원자적 교체 |
+| `decorators.py` | 실행 시간 측정, 공통 예외 처리 |
+| `errors.py` | 사용자용 오류 계층 |
+| `__main__.py` | `python -m budget_app` 진입점 |
+
+`__init__.py`는 Python 패키지 표시와 버전 정보만 포함합니다.
+
+## 6. 검증과 종료 코드
+
+- 날짜: 실제 존재하는 `YYYY-MM-DD`
+- 타입: `income` 또는 `expense`
+- 금액: 0보다 큰 정수
+- 카테고리: 등록된 이름만 허용
+- 스택트레이스 대신 `오류 원인`과 `해결 힌트` 출력
+- 정상 종료: `0`
+- 예상 가능한 입력/업무 오류: `1`
+- 예상하지 못한 오류: `2`
+- Ctrl+C 취소: `130`
+- argparse 사용법 오류: `2`
+
+종료 코드 확인 예시:
+
+```bash
+python -m budget_app delete --id does-not-exist
+echo $?
+```
+
+모든 실제 명령에는 실행 시간 측정과 공통 예외 처리 데코레이터가 적용됩니다. 각 명령과 하위 명령은 `--help`로 사용법을 확인할 수 있습니다.

@@ -1,3 +1,9 @@
+"""python -m budget_app 실행 진입점."""
+
+import sys
+
 from .cli import main
 
-raise SystemExit(main())
+
+if __name__ == "__main__":
+    sys.exit(main())
