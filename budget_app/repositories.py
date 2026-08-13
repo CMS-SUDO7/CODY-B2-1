@@ -14,7 +14,7 @@ from .models import Budget, Transaction
 
 
 # categories.jsonl이 비어 있을 때 자동으로 생성할 기본 카테고리
-DEFAULT_CATEGORIES = ("식비", "교통비", "월세", "월급", "기타")
+DEFAULT_CATEGORIES = ("food", "transport", "housing", "health", "salary", "etc")
 
 
 # JSONL 저장소 공통 기능: 파일 준비, 한 줄씩 읽기, 추가, 원자적 교체

@@ -9,7 +9,7 @@ import uuid
 from collections import defaultdict
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, TypedDict, cast
 
 from .errors import ConflictError, NotFoundError, StorageError, ValidationError
 from .models import Budget, Transaction, normalize_tags, validate_date, validate_month, validate_type
@@ -17,7 +17,35 @@ from .repositories import BudgetRepository, CategoryRepository, TransactionRepos
 
 
 # import/export에서 공통으로 사용하는 고정 CSV 열 순서
-CSV_FIELDS = ["date", "type", "category", "amount", "memo", "tags"]
+CsvField = Literal["date", "type", "category", "amount", "memo", "tags"]
+CSV_FIELDS: list[CsvField] = ["date", "type", "category", "amount", "memo", "tags"]
+
+
+# CSV는 외부 파일과 프로그램이 만나는 경계이므로 행의 키와 값 타입을 명시한다.
+# DictReader는 비어 있거나 열이 부족한 값을 None으로 줄 수 있어 모든 키를 선택형으로 둔다.
+class CsvImportRow(TypedDict, total=False):
+    date: str | None
+    type: str | None
+    category: str | None
+    amount: str | None
+    memo: str | None
+    tags: str | None
+
+
+# export에서는 검증된 Transaction만 사용하므로 모든 열과 타입이 확정되어 있다.
+class CsvExportRow(TypedDict):
+    date: str
+    type: str
+    category: str
+    amount: int
+    memo: str
+    tags: str
+
+
+def csv_value(row: CsvImportRow, field: CsvField) -> str:
+    """CSV의 누락 값(None)을 검증 가능한 빈 문자열로 정규화한다."""
+    value = row.get(field)
+    return value if value is not None else ""
 
 
 # 거래 업무 기능: add, list, search, update, delete 규칙을 한곳에서 처리
@@ -232,6 +260,7 @@ class CsvService:
             )
         # 일부 행만 저장되는 일을 막기 위해 모든 행을 먼저 검증해 준비한다.
         prepared: list[Transaction] = []
+        validation_errors: list[str] = []
         try:
             with source.open("r", encoding="utf-8-sig", newline="") as file:
                 reader = csv.DictReader(file)
@@ -244,23 +273,24 @@ class CsvService:
                         "date,type,category,amount 헤더를 포함하세요.",
                     )
                 for row_number, row in enumerate(reader, start=2):
+                    typed_row = cast(CsvImportRow, row)
                     try:
                         prepared.append(
                             Transaction(
                                 id=uuid.uuid4().hex,
-                                date=row.get("date", ""),
-                                type=row.get("type", ""),
-                                category=self.transaction_service._require_category(row.get("category", "")),
-                                amount=row.get("amount", ""),  # type: ignore[arg-type]
-                                memo=row.get("memo", ""),
-                                tags=normalize_tags(row.get("tags", "")),
+                                date=csv_value(typed_row, "date"),
+                                type=csv_value(typed_row, "type"),
+                                category=self.transaction_service._require_category(
+                                    csv_value(typed_row, "category")
+                                ),
+                                amount=csv_value(typed_row, "amount"),  # type: ignore[arg-type]
+                                memo=csv_value(typed_row, "memo"),
+                                tags=normalize_tags(csv_value(typed_row, "tags")),
                             )
                         )
                     except ValidationError as exc:
-                        raise ValidationError(
-                            f"CSV {row_number}번째 줄 오류: {exc.message}",
-                            exc.hint,
-                        ) from exc
+                        # 한 번의 import로 잘못된 모든 행을 확인할 수 있도록 오류를 모은다.
+                        validation_errors.append(f"{row_number}번째 줄: {exc.message}")
         except UnicodeDecodeError as exc:
             raise ValidationError(
                 "CSV 파일이 UTF-8 형식이 아닙니다.",
@@ -271,6 +301,13 @@ class CsvService:
                 f"CSV 파일을 읽을 수 없습니다: {source}",
                 "경로와 읽기 권한을 확인하세요.",
             ) from exc
+
+        if validation_errors:
+            details = "\n".join(f"- {error}" for error in validation_errors)
+            raise ValidationError(
+                f"CSV 검증 실패 ({len(validation_errors)}건)\n{details}",
+                "표시된 행을 수정하세요. 오류가 하나라도 있으면 파일 전체를 반영하지 않습니다.",
+            )
 
         # 전 행이 유효할 때만 기존 JSONL과 합쳐 원자적으로 반영한다.
         self.transaction_service.transactions.append_many(prepared)
@@ -317,16 +354,15 @@ class CsvService:
                     from_date=from_date,
                     to_date=to_date,
                 ):
-                    writer.writerow(
-                        {
-                            "date": item.date,
-                            "type": item.type,
-                            "category": item.category,
-                            "amount": item.amount,
-                            "memo": item.memo,
-                            "tags": ",".join(item.tags),
-                        }
-                    )
+                    export_row: CsvExportRow = {
+                        "date": item.date,
+                        "type": item.type,
+                        "category": item.category,
+                        "amount": item.amount,
+                        "memo": item.memo,
+                        "tags": ",".join(item.tags),
+                    }
+                    writer.writerow(export_row)
                     count += 1
                 temp.flush()
                 os.fsync(temp.fileno())
